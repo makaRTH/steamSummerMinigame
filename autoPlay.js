@@ -1,7 +1,7 @@
 // ==UserScript== 
 // @name Monster Minigame AutoScript
 // @author /u/mouseasw for creating and maintaining the script, /u/WinneonSword for the Greasemonkey support, and every contributor on the GitHub repo for constant enhancements.
-// @version 1.9
+// @version 1.7
 // @namespace https://github.com/mouseas/steamSummerMinigame
 // @description A script that runs the Steam Monster Minigame for you.
 // @match http://steamcommunity.com/minigame/towerattack*
@@ -13,9 +13,10 @@
 
 var isAlreadyRunning = false;
 
-var avgClickRate = 5; // to keep track of the average clicks per second that the game actually records
+var clickRate = 20; // change to number of desired clicks per second
+var avgClickRate = 20; // to keep track of the average clicks per second that the game actually records
 var totalClicksPastFiveSeconds = avgClickRate * 5; // keeps track of total clicks over the past 5 seconds for a moving average
-var previousTickTime = 0; // tracks the last time we received an update from the game
+var previousTickTime = 0;
 
 var ABILITIES = {
 	"MORALE_BOOSTER": 5,
@@ -47,6 +48,20 @@ var ENEMY_TYPE = {
 	"TREASURE":4
 }
 
+// Each elemental damage, lucky shot and loot have their own type in m_rgTuningData
+var UPGRADE_TYPES = {
+	"ARMOR": 0,
+	"DPS": 1,
+	"CLICK_DAMAGE": 2,
+	"ELEMENTAL_FIRE": 3,
+	"ELEMENTAL_WATER": 4,
+	"ELEMENTAL_AIR": 5,
+	"ELEMENTAL_EARTH": 6,
+	"LUCKY_SHOT": 7,
+	"ABILITY": 8,
+	"LOOT": 9
+}
+
 if (thingTimer){
 	window.clearInterval(thingTimer);
 }
@@ -55,7 +70,7 @@ function firstRun() {
 	// disable particle effects - this drastically reduces the game's memory leak
 	if (g_Minigame !== undefined) {
 		g_Minigame.CurrentScene().DoClickEffect = function() {};
-		g_Minigame.CurrentScene().DoCritEffect = function( nDamage, x, y, additionalText ) {};
+		// g_Minigame.CurrentScene().DoCritEffect = function( nDamage, x, y, additionalText ) {};
 		g_Minigame.CurrentScene().SpawnEmitter = function(emitter) {
 			emitter.emit = false;
 			return emitter;
@@ -74,8 +89,11 @@ function doTheThing() {
 	if (!isAlreadyRunning){
 		isAlreadyRunning = true;
 
+		g_msTickRate = 1100;
+		
 		updateAvgClickRate();
 		goToLaneWithBestTarget();
+		purchaseUpgrades();
 		useGoodLuckCharmIfRelevant();
 		useMedicsIfRelevant();
 		useMoraleBoosterIfRelevant();
@@ -83,6 +101,7 @@ function doTheThing() {
 		useNapalmIfRelevant();
 		useTacticalNukeIfRelevant();
 		useCrippleSpawnerIfRelevant();
+		useMetalDetectorIfRelevant();
 		useGoldRainIfRelevant();
 		attemptRespawn();
 
@@ -91,9 +110,9 @@ function doTheThing() {
 }
 
 // This calculates a 5 second moving average of clicks per second based
-// on the values that the game is recording.
+// on the values that the server is providing.
 function updateAvgClickRate() {
-	// Make sure we have updated info from the game first
+	// Make sure we have updated info from the server first
 	if (previousTickTime != g_Minigame.CurrentScene().m_nLastTick){
 		totalClicksPastFiveSeconds -= avgClickRate;
 		totalClicksPastFiveSeconds += g_Minigame.CurrentScene().m_nLastClicks / ((g_Minigame.CurrentScene().m_nLastTick - previousTickTime) / 1000);
@@ -117,7 +136,7 @@ function goToLaneWithBestTarget() {
 	var goldRainLane = 0;
 	var goldRainTarget = 0;
 	var goldRainGoldPerClick = 0;
-
+	
 	// determine which lane and enemy is the optimal target
 	var enemyTypePriority = [
 		ENEMY_TYPE.TREASURE, 
@@ -199,7 +218,7 @@ function goToLaneWithBestTarget() {
 			lowLane = skippedSpawnerLane;
 			lowTarget = skippedSpawnerTarget;
 		}
-
+		
 		// If we found a lane with gold rain active and we have a avgClickRate > 0, 
 		// we probably want to go there, but first we'll check if we think our low hp 
 		// target will die in the next 5 seconds and provide more gold from dying than 
@@ -211,6 +230,7 @@ function goToLaneWithBestTarget() {
 				lowLane = goldRainLane;
 				lowTarget = goldRainTarget;
 				targetFound = true;
+				console.log("I've acquired a gold rain target!");
 			}
 		}
 	}
@@ -274,6 +294,120 @@ function goToLaneWithBestTarget() {
 			// Reflect Damage
 			enableAbilityItem(ITEMS.REFLECT_DAMAGE);
 		}
+	}
+}
+
+function purchaseUpgrades() {
+	var oddsOfElement = .25;
+	
+	var buyUpgrade = function(id) {
+		g_Minigame.CurrentScene().TryUpgrade(document.getElementById('upgr_' + id).childElements()[0].childElements()[1]);
+	}
+	
+	var myGold = g_Minigame.CurrentScene().m_rgPlayerData.gold;
+	
+	//Initial values for   armor, dps, click damage 
+	var bestUpgradeForDamage,bestUpgradeForArmor;
+	var highestUpgradeValueForDamage = 0;
+	var highestUpgradeValueForArmor = 0;
+	var bestElement = -1;
+	var highestElementLevel = 0;
+	
+	
+	var upgrades = g_Minigame.CurrentScene().m_rgTuningData.upgrades.slice(0);
+	
+	for( var i=0; i< upgrades.length; i++ ) {
+		var upgrade = upgrades[i];
+		
+		if ( upgrade.required_upgrade != undefined )
+		{
+			var requiredUpgradeLevel = upgrade.required_upgrade_level != undefined ? upgrade.required_upgrade_level : 1;
+			var parentUpgradeLevel = g_Minigame.CurrentScene().GetUpgradeLevel(upgrade.required_upgrade);
+			if ( requiredUpgradeLevel > parentUpgradeLevel )
+			{
+				//If upgrade is not available, we skip it
+				continue;
+			}
+		}
+	
+		var upgradeCurrentLevel = g_Minigame.CurrentScene().m_rgPlayerUpgrades[i].level;
+		var upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[i].cost_for_next_level;
+		
+		switch(upgrade.type) {
+			case UPGRADE_TYPES.ARMOR:
+				if(upgrade.multiplier / upgradeCost > highestUpgradeValueForArmor) { // hp increase per moneys
+					bestUpgradeForArmor = i;
+					highestUpgradeValueForArmor = upgrade.multiplier / upgradeCost;
+				}
+				break;
+			case UPGRADE_TYPES.CLICK_DAMAGE:
+				if(avgClickRate * upgrade.multiplier / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
+					bestUpgradeForDamage = i;
+					highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+				}
+				break;
+			case UPGRADE_TYPES.DPS:
+				if(upgrade.multiplier / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
+					bestUpgradeForDamage = i;
+					highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+				}
+				break;
+			case UPGRADE_TYPES.ELEMENTAL_FIRE:
+			case UPGRADE_TYPES.ELEMENTAL_WATER:
+			case UPGRADE_TYPES.ELEMENTAL_AIR:
+			case UPGRADE_TYPES.ELEMENTAL_EARTH:
+				if(upgradeCurrentLevel > highestElementLevel){
+					highestElementLevel = upgradeCurrentLevel;
+					bestElement = i;
+				}
+				break;
+			case UPGRADE_TYPES.LUCKY_SHOT:
+				var critMultiplier = g_Minigame.CurrentScene().m_rgPlayerTechTree.damage_multiplier_crit
+				var critChance = g_Minigame.CurrentScene().m_rgPlayerTechTree.crit_percentage;
+				var dpc = g_Minigame.CurrentScene().m_rgPlayerTechTree.damage_per_click;
+				if(upgrade.multiplier * critMultiplier * dpc * critChance * avgClickRate / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
+					bestUpgradeForDamage = i;
+					highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	
+/*	if(bestElement) {
+		//Let user choose what element to level up by adding the point to desired element
+		upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestElement].cost_for_next_level;
+		
+		var dps = g_Minigame.CurrentScene().m_rgPlayerTechTree.dps;
+		dps = dps + (g_Minigame.CurrentScene().m_rgPlayerTechTree.damage_per_click * avgClickRate);
+		if(oddsOfElement * dps * upgrades[bestElement].multiplier / upgradeCost > highestUpgradeValueForDamage) { //dmg increase / moneys
+			//bestUpgradeForDamage = bestElement; // Not doing this because this values element damage too much
+		}
+	}
+	
+	var myMaxHealth = g_Minigame.CurrentScene().m_rgPlayerTechTree.max_hp;
+	// check if health is below 30%
+	var hpPercent = g_Minigame.CurrentScene().m_rgPlayerData.hp / myMaxHealth;
+	if (hpPercent < 0.3) {
+		// Prioritize armor over damage
+		// - Should we by any armor we can afford or just wait for the best one possible?
+		//	 currently waiting
+		upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestUpgradeForArmor].cost_for_next_level;
+		
+		if(myGold > upgradeCost && bestUpgradeForArmor) {
+			console.log("Buying " + upgrades[bestUpgradeForArmor].name);
+			buyUpgrade(bestUpgradeForArmor);
+			myGold = g_Minigame.CurrentScene().m_rgPlayerData.gold;
+		}
+	}*/
+	
+	// Try to buy some damage
+	upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestUpgradeForDamage].cost_for_next_level;
+
+	if(myGold > upgradeCost && bestUpgradeForDamage) {
+		console.log("Buying " + upgrades[bestUpgradeForDamage].name);
+		buyUpgrade(bestUpgradeForDamage);
 	}
 }
 
@@ -434,9 +568,6 @@ function useTacticalNukeIfRelevant() {
 function useCrippleSpawnerIfRelevant() {
 	// Check if Cripple Spawner is available
 	if(hasItem(ITEMS.CRIPPLE_SPAWNER)) {
-		if (isAbilityCoolingDown(ITEMS.CRIPPLE_SPAWNER)) {
-			return;
-		}
 
 		//Check that the lane has a spawner and record it's health percentage
 		var currentLane = g_Minigame.CurrentScene().m_nExpectedLane;
@@ -457,6 +588,25 @@ function useCrippleSpawnerIfRelevant() {
 		if (enemySpawnerExists && enemySpawnerHealthPercent > 0.95) {
 			console.log("Cripple Spawner available, and needed. Cripple 'em.");
 			triggerItem(ITEMS.CRIPPLE_SPAWNER);
+		}
+	}
+}
+
+function useMetalDetectorIfRelevant() {
+	if (hasPurchasedAbility(ABILITIES.METAL_DETECTOR)) {
+		if (isAbilityCoolingDown(ABILITIES.METAL_DETECTOR)) {
+			return;
+		}
+
+		var enemy = g_Minigame.m_CurrentScene.GetEnemy(g_Minigame.m_CurrentScene.m_rgPlayerData.current_lane, g_Minigame.m_CurrentScene.m_rgPlayerData.target);
+
+		if (enemy && enemy.m_data.type == ENEMY_TYPE.BOSS) {
+			var enemyBossHealthPercent = enemy.m_flDisplayedHP / enemy.m_data.max_hp;
+
+			if (enemyBossHealthPercent < 0.3 ) {
+				console.log('Metal detector is purchased and cooled down, Triggering it on boss');
+				triggerAbility(ABILITIES.METAL_DETECTOR);
+			}
 		}
 	}
 }
@@ -486,6 +636,7 @@ function useGoldRainIfRelevant() {
 function attemptRespawn() {
 	if ((g_Minigame.CurrentScene().m_bIsDead) && 
 			((g_Minigame.CurrentScene().m_rgPlayerData.time_died) + 5) < (g_Minigame.CurrentScene().m_nTime)) {
+		console.log("Attempting to respawn...");
 		RespawnPlayer();
 	}
 }
@@ -586,3 +737,25 @@ var thingTimer = window.setInterval(function(){
 		thingTimer = window.setInterval(doTheThing, 1000);
 	}
 }, 1000);
+
+function clickTheThing() {
+    g_Minigame.m_CurrentScene.DoClick(
+        {
+            data: {
+                getLocalPosition: function() {
+                    var enemy = g_Minigame.m_CurrentScene.GetEnemy(
+                                      g_Minigame.m_CurrentScene.m_rgPlayerData.current_lane,
+                                      g_Minigame.m_CurrentScene.m_rgPlayerData.target),
+                        laneOffset = enemy.m_nLane * 440;
+
+                    return {
+                        x: enemy.m_Sprite.position.x - laneOffset,
+                        y: enemy.m_Sprite.position.y - 52
+                    }
+                }
+            }
+        }
+    );
+}
+
+var clickTimer = window.setInterval(clickTheThing, 1000/clickRate);
