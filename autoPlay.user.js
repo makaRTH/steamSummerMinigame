@@ -377,6 +377,7 @@ function MainLoop() {
 		useMaxElementalDmgIfRelevant();
 		useWormholeIfRelevant();
 		updatePlayersInGame();
+		findBestUpgrade();
 
 		if (level !== lastLevel) {
 			lastLevel = level;
@@ -1662,7 +1663,7 @@ function enhanceTooltips() {
 }
 
 function buyUpgrade(id) {
-	advLog("Buying " + upgrades[id].name + " level " + (lookup[id].level + 1), 2);
+	advLog("Buying " + s().m_rgTuningData.upgrades[id].name + " level ", 2);
 	if(id >= 3 && 6 >= id) { //If upgrade is element damage
 		s().TryUpgrade(document.getElementById('upgr_' + id).childElements()[3]);
 	} else {
@@ -1693,7 +1694,7 @@ function findBestUpgrade(){
 		if ( upgrade.required_upgrade != undefined )
 		{
 			var requiredUpgradeLevel = upgrade.required_upgrade_level != undefined ? upgrade.required_upgrade_level : 1;
-			var parentUpgradeLevel = g_Minigame.CurrentScene().GetUpgradeLevel(upgrade.required_upgrade);
+			var parentUpgradeLevel = s().GetUpgradeLevel(upgrade.required_upgrade);
 			if (parentUpgradeLevel == 0)
 			{
 				//If required upgrade is not available, we skip it
@@ -1704,8 +1705,8 @@ function findBestUpgrade(){
 			
 		}
 	
-		var upgradeCurrentLevel = g_Minigame.CurrentScene().m_rgPlayerUpgrades[i].level;
-		var upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[i].cost_for_next_level;
+		var upgradeCurrentLevel = s().GetUpgradeLevel(i);
+		var upgradeCost = s().GetUpgradeCost(i);
 		if (futureUpgrade) {
 			// If we're still working towards the next tier, we need to find out the total cost of all
 			// the upgrades left on the required tier before the next tier upgrade could be purchased
@@ -1800,10 +1801,9 @@ function findBestUpgrade(){
 	}*/
 	
 	// Try to buy some damage
-	upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestUpgradeForDamage].cost_for_next_level;
+	upgradeCost = s().GetUpgradeCost(bestUpgradeForDamage);
 
 	if(myGold > upgradeCost && bestUpgradeForDamage) {
-		console.log("Buying " + upgrades[bestUpgradeForDamage].name);
 		buyUpgrade(bestUpgradeForDamage);
 	}
 }
