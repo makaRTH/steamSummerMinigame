@@ -1660,9 +1660,14 @@ function enhanceTooltips() {
 		return strOut;
 	};
 }
-/*
+
 function buyUpgrade(id) {
-	s().TryUpgrade(w.document.getElementById('upgr_' + id).childElements()[0].childElements()[1]);
+	advLog("Buying " + upgrades[id].name + " level " + (lookup[id].level + 1), 2);
+	if(id >= 3 && 6 >= id) { //If upgrade is element damage
+		s().TryUpgrade(document.getElementById('upgr_' + id).childElements()[3]);
+	} else {
+		s().TryUpgrade(document.getElementById('upgr_' + id).childElements()[0].childElements()[1]);
+	}
 }
 
 
@@ -1693,7 +1698,7 @@ function findBestUpgrade(){
 			{
 				//If required upgrade is not available, we skip it
 				continue;
-			} else (parentUpgradeLevel < requiredUpgradeLevel) {
+			} else if (parentUpgradeLevel < requiredUpgradeLevel) {
 				futureUpgrade = true;
 			}
 			
@@ -1704,7 +1709,7 @@ function findBestUpgrade(){
 		if (futureUpgrade) {
 			// If we're still working towards the next tier, we need to find out the total cost of all
 			// the upgrades left on the required tier before the next tier upgrade could be purchased
-			for (var l=s().GetUpgradeLevel(upgrade.required_upgrade), l<10, l++) {
+			for (var l=s().GetUpgradeLevel(upgrade.required_upgrade); l<10; l++) {
 				upgradeCost += upgrade.cost * Math.pow(upgrade.cost_exponential_base, l);
 			}
 		}
@@ -1717,13 +1722,25 @@ function findBestUpgrade(){
 				}
 				break;
 			case UPGRADE_TYPES.CLICK_DAMAGE:
-				if(avgClickRate * upgrade.multiplier / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
-					bestUpgradeForDamage = i;
-					highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+				if (currentClickRate > 0) {
+					var critMultiplier = s().m_rgPlayerTechTree.damage_multiplier_crit
+					var critChance = s().m_rgPlayerTechTree.crit_percentage>1?1:s().m_rgPlayerTechTree.crit_percentage;
+					var avgElementalMultiplier = (s().m_rgPlayerTechTree.damage_multiplier_fire + s().m_rgPlayerTechTree.damage_multiplier_water + s().m_rgPlayerTechTree.damage_multiplier_air + s().m_rgPlayerTechTree.damage_multiplier_earth) / 4;
+					var dpc = s().m_rgPlayerTechTree.damage_per_click;
+					var newDpc = dpc + (upgrade.multiplier * s().m_rgPlayerTechTree.base_dps);
+					var currentClickDps = ((dpc * critChance * critMultiplier) + (dpc * avgElementalMultiplier)) * currentClickRate;
+					var newClickDps = ((newDpc * critChance * critMultiplier) + (newDpc * avgElementalMultiplier)) * currentClickRate;
+					if((newClickDps - currentClickDps) / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
+						bestUpgradeForDamage = i;
+						highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+					}
 				}
 				break;
 			case UPGRADE_TYPES.DPS:
-				if(upgrade.multiplier / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
+				var avgElementalMultiplier = (s().m_rgPlayerTechTree.damage_multiplier_fire + s().m_rgPlayerTechTree.damage_multiplier_water + s().m_rgPlayerTechTree.damage_multiplier_air + s().m_rgPlayerTechTree.damage_multiplier_earth) / 4;
+				var currentDps = s().m_rgPlayerTechTree.dps * avgElementalMultiplier;
+				var newDps = (s().m_rgPlayerTechTree.dps + (upgrade.multiplier * s().m_rgPlayerTechTree.base_dps)) * avgElementalMultiplier;
+				if((newDps - currentDps) / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
 					bestUpgradeForDamage = i;
 					highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
 				}
@@ -1738,12 +1755,16 @@ function findBestUpgrade(){
 				}
 				break;
 			case UPGRADE_TYPES.LUCKY_SHOT:
-				var critMultiplier = g_Minigame.CurrentScene().m_rgPlayerTechTree.damage_multiplier_crit
-				var critChance = g_Minigame.CurrentScene().m_rgPlayerTechTree.crit_percentage;
-				var dpc = g_Minigame.CurrentScene().m_rgPlayerTechTree.damage_per_click;
-				if(upgrade.multiplier * critMultiplier * dpc * critChance * avgClickRate * 2/ upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
-					bestUpgradeForDamage = i;
-					highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+				if (currentClickRate > 0) {
+					var critMultiplier = s().m_rgPlayerTechTree.damage_multiplier_crit
+					var critChance = s().m_rgPlayerTechTree.crit_percentage>1?1:s().m_rgPlayerTechTree.crit_percentage;
+					var dpc = s().m_rgPlayerTechTree.damage_per_click;
+					var currentClickDps = dpc * critChance * critMultiplier * currentClickRate;
+					var newClickDps = dpc * critChance * (critMultiplier + parseFloat(upgrade.multiplier)) * currentClickRate;
+					if((newClickDps - currentClickDps) / upgradeCost > highestUpgradeValueForDamage) { // dmg increase per moneys
+						bestUpgradeForDamage = i;
+						highestUpgradeValueForDamage = upgrade.multiplier / upgradeCost;
+					}
 				}
 				break;
 			default:
@@ -1776,7 +1797,7 @@ function findBestUpgrade(){
 			buyUpgrade(bestUpgradeForArmor);
 			myGold = g_Minigame.CurrentScene().m_rgPlayerData.gold;
 		}
-	}
+	}*/
 	
 	// Try to buy some damage
 	upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestUpgradeForDamage].cost_for_next_level;
@@ -1786,7 +1807,7 @@ function findBestUpgrade(){
 		buyUpgrade(bestUpgradeForDamage);
 	}
 }
-*/
+
 function getGameLevel() {
 	return s().m_rgGameData.level + 1;
 }
